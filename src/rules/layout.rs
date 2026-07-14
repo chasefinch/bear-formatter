@@ -31,6 +31,7 @@ enum Group {
     Table,
     Rule,
     Label,
+    Wikilink,
     Code,
     Para,
 }
@@ -56,6 +57,11 @@ impl Rule for Layout {
                 had_blank = true;
                 continue;
             }
+            // An empty `>` line is a blank within a blockquote; drop it and let
+            // the quote-splitting logic regenerate separators (keeps it idempotent).
+            if !is_code && is_quote_blank(content) {
+                continue;
+            }
 
             let group = classify(content, is_code);
             let rendered = match group {
@@ -68,8 +74,9 @@ impl Rule for Layout {
             };
 
             if let Some(prev) = previous {
-                for _ in 0..desired_blanks(prev, group, had_blank, hard_break) {
-                    lines.push(String::new());
+                let (count, separator) = gap(prev, group, had_blank, hard_break, &rendered);
+                for _ in 0..count {
+                    lines.push(separator.to_string());
                 }
             }
             hard_break = rendered.ends_with("  ");
@@ -121,9 +128,57 @@ fn classify(content: &str, is_code: bool) -> Group {
         Group::Rule
     } else if is_label_line(trimmed) {
         Group::Label
+    } else if is_wikilink_only(trimmed) {
+        Group::Wikilink
     } else {
         Group::Para
     }
+}
+
+/// The separator to place before `current`: how many lines, and their text.
+/// Blockquote paragraphs are split with an empty `>` line; everything else uses
+/// blank lines.
+fn gap(
+    previous: Group,
+    current: Group,
+    had_blank: bool,
+    prev_hard_break: bool,
+    current_line: &str,
+) -> (usize, &'static str) {
+    if let (Group::Quote, Group::Quote) = (previous, current) {
+        // Inside a blockquote a newline is a paragraph break too (split with an
+        // empty `>` line), unless the line is a pipe-quote or the previous had a
+        // hard break.
+        let inner = quote_inner(current_line);
+        let keep_together = prev_hard_break || inner.starts_with('|');
+        return (usize::from(!keep_together), ">");
+    }
+    (
+        desired_blanks(previous, current, had_blank, prev_hard_break),
+        "",
+    )
+}
+
+/// The content of a blockquote line after its `>` marker.
+fn quote_inner(line: &str) -> &str {
+    let after_marker = line.trim_start().strip_prefix('>').unwrap_or(line);
+    after_marker.strip_prefix(' ').unwrap_or(after_marker)
+}
+
+/// Whether `content` is an empty blockquote line (`>` with nothing after it).
+fn is_quote_blank(content: &str) -> bool {
+    content
+        .trim_start()
+        .strip_prefix('>')
+        .is_some_and(|rest| rest.trim().is_empty())
+}
+
+/// Whether the whole line is a single wikilink, e.g. `[[Page]]`.
+fn is_wikilink_only(trimmed: &str) -> bool {
+    trimmed
+        .strip_prefix("[[")
+        .and_then(|inner| inner.strip_suffix("]]"))
+        .is_some_and(|inner| !inner.is_empty() && !inner.contains("[[") && !inner.contains("]]"))
 }
 
 /// Whether the whole line is a single strong-emphasis span, e.g. `**Label:**`.
@@ -155,7 +210,9 @@ fn desired_blanks(
         (Group::ListItem | Group::ListCont, Group::ListCont) => usize::from(had_blank),
         (Group::ListCont, Group::ListItem) => 1,
         (Group::Heading, Group::Tag) | (Group::Tag, Group::Tag) => 0,
-        (Group::Code, Group::Code) | (Group::Quote, Group::Quote) => 0,
+        (Group::Code, Group::Code) => 0,
+        // Consecutive wikilink-only lines read as a table of contents.
+        (Group::Wikilink, Group::Wikilink) => 0,
         // Pipe-prefixed lines (table rows) are one contiguous block — a "don't
         // split these" marker. Blanks between them are removed; the blank after
         // the block is enforced by the default arm below.
@@ -286,6 +343,21 @@ mod tests {
         );
         // Blank between pipe lines removed; blank after the block enforced.
         assert_eq!(apply("| a\n\n| b\ntext"), "| a\n| b\n\ntext");
+    }
+
+    #[test]
+    fn blockquote_lines_split_into_paragraphs() {
+        assert_eq!(apply("> one\n> two"), "> one\n>\n> two");
+        // Pipe-quote lines stay together.
+        assert_eq!(apply("> | a\n> | b"), "> | a\n> | b");
+        let once = apply("> one\n> two\n> three");
+        assert_eq!(apply(&once), once);
+    }
+
+    #[test]
+    fn consecutive_wikilinks_are_a_toc() {
+        assert_eq!(apply("[[A]]\n[[B]]\n[[C]]"), "[[A]]\n[[B]]\n[[C]]");
+        assert_eq!(apply("[[A]]\n\n[[B]]"), "[[A]]\n[[B]]");
     }
 
     #[test]
