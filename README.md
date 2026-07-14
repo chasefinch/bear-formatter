@@ -14,11 +14,13 @@ notes stay in sync.
 
 ## Install
 
-Homebrew (coming):
+Homebrew (pre-release — builds from `main`):
 
 ```bash
-brew install chasefinch/tap/bear-formatter
+brew install --HEAD chasefinch/tap/bear-formatter
 ```
+
+The tagged `brew install chasefinch/tap/bear-formatter` lands with the first release.
 
 From source:
 

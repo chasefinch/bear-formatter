@@ -1,0 +1,37 @@
+# Rules
+
+bear-formatter is a **formatter**, not a linter: notes in, canonical notes out.
+Every rule is a total, idempotent transformation, applied in the order below.
+Code (fenced, indented, and inline) is left untouched by every rule.
+
+| # | Rule | What it does |
+|---|------|--------------|
+| 1 | `line-endings` | CRLF / lone CR → LF. |
+| 2 | `typography` | Straight quotes/apostrophes → curly; `...` → `…`. |
+| 3 | `whitespace` | Collapse runs of spaces, drop spaces before punctuation, empty whitespace-only lines, keep two-space hard breaks. |
+| 4 | `headings` | One space after the `#`s, no leading indent, trailing punctuation trimmed. Casing untouched. |
+| 5 | `list-markers` | Bullets → `-`, one space after a marker, drop empty items, collapse duplicated markers. Ordered numbers untouched (no renumbering). |
+| 6 | `footnotes` | Renumber by first-reference order; move definitions to the bottom. |
+| 7 | `tags` | Pure-tag lines gathered, deduped, sorted, and moved under the first heading (or the top); mixed lines split one tag per line in place; redundant closing `#` stripped. |
+| 8 | `heading-levels` | Biggest heading promoted to H1 (or H2 when the note opens with prose — Bear treats line 1 as the title); no heading jumps more than one level deeper than the previous. Multiple/zero H1s are fine. |
+| 9 | `layout` | One blank line around every block; no leading/trailing blanks; list indentation → tabs; no blanks between items; blank around root lists; multi-paragraph items keep their inner blank and get one after; a whole-line bold label (`**Label:**`) is its own block. |
+| 10 | `final-newline` | Exactly one trailing newline. |
+
+## Design notes
+
+- **Tags parse from text** (no database): a tag is `#` + non-space characters,
+  optionally closed with `#`. This runs identically against files or the DB.
+- **Idempotence** is the contract and is checked in `tests/integration.rs`; it
+  also held across 60 real notes during development.
+
+## Known v1 gaps (to revisit after testing)
+
+- **Spaced tags** (`#a b#`, closed with `#`) are left untouched rather than
+  reformatted — only simple `#tag` forms are gathered/sorted/split. Their
+  redundant-`#` stripping is therefore skipped (which is safe — the `#` is kept).
+- **List continuation lines** (indented text under an item) are re-indented with
+  tabs at one level past the item, but their original alignment is not otherwise
+  preserved.
+- **Blank lines inside lists** are emitted empty, not indented to the list level.
+- **Footnotes**: only single-line definitions are moved; multi-line definitions
+  stay where they are.
