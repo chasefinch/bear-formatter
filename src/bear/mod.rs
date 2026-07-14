@@ -65,6 +65,19 @@ impl BearDatabase {
         }
     }
 
+    /// How many notes are locked (encrypted) and therefore skipped — Bear's CLI
+    /// cannot read encrypted content, so there is no way to format them.
+    pub fn locked_note_count(&self) -> Result<usize, BearError> {
+        self.connection
+            .query_row(
+                "SELECT COUNT(*) FROM ZSFNOTE \
+                 WHERE ZENCRYPTED = 1 AND ZTRASHED = 0 AND ZPERMANENTLYDELETED = 0",
+                rusqlite::params![],
+                |row| row.get(0),
+            )
+            .map_err(BearError::Query)
+    }
+
     fn all_notes(&self) -> Result<Vec<Note>, BearError> {
         self.query(
             &format!("SELECT {NOTE_COLUMNS} FROM ZSFNOTE WHERE {LIVE_NOTE} ORDER BY {RECENT}"),

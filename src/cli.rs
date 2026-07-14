@@ -24,7 +24,13 @@ struct Cli {
     paths: Vec<String>,
 
     /// Format a Markdown string and print the result; write nothing.
-    #[arg(short = 'c', long, value_name = "MARKDOWN", conflicts_with = "paths")]
+    #[arg(
+        short = 'c',
+        long,
+        value_name = "MARKDOWN",
+        conflicts_with = "paths",
+        allow_hyphen_values = true
+    )]
     code: Option<String>,
 
     /// Show what would change without writing anything.
@@ -84,6 +90,7 @@ struct Report {
     files_total: usize,
     notes_changed: usize,
     notes_total: usize,
+    locked: usize,
     failures: Vec<String>,
 }
 
@@ -104,6 +111,12 @@ impl Report {
         }
         if self.files_total == 0 && self.notes_total == 0 {
             println!("Nothing to format.");
+        }
+        if self.locked > 0 {
+            println!(
+                "Skipped {} locked note(s) — Bear can't read encrypted content.",
+                self.locked
+            );
         }
         for failure in &self.failures {
             eprintln!("🐾 \x1b[91m{failure}\x1b[0m");
@@ -150,7 +163,9 @@ fn format_database(
     dry_run: bool,
     report: &mut Report,
 ) -> anyhow::Result<()> {
-    let notes = BearDatabase::open(path)?.select(&Selector::All)?;
+    let database = BearDatabase::open(path)?;
+    let notes = database.select(&Selector::All)?;
+    report.locked += database.locked_note_count().unwrap_or(0);
     let bearcli = if dry_run {
         None
     } else {

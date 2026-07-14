@@ -12,15 +12,25 @@ Code (fenced, indented, and inline) is left untouched by every rule.
 | 4 | `headings` | One space after the `#`s, no leading indent, trailing punctuation trimmed. Casing untouched. |
 | 5 | `list-markers` | Bullets → `-`, one space after a marker, drop empty items, collapse duplicated markers. Ordered numbers untouched (no renumbering). |
 | 6 | `footnotes` | Renumber by first-reference order; move definitions to the bottom. |
-| 7 | `tags` | Pure-tag lines gathered, deduped, sorted, and moved under the first heading (or the top); mixed lines split one tag per line in place; redundant closing `#` stripped. |
-| 8 | `heading-levels` | Biggest heading promoted to H1 (or H2 when the note opens with prose — Bear treats line 1 as the title); no heading jumps more than one level deeper than the previous. Multiple/zero H1s are fine. |
-| 9 | `layout` | One blank line around every block; no leading/trailing blanks; list indentation → tabs; no blanks between items; blank around root lists; multi-paragraph items keep their inner blank and get one after; a whole-line bold label (`**Label:**`) is its own block. |
-| 10 | `final-newline` | Exactly one trailing newline. |
+| 7 | `tags` | Tag-led lines moved under the first heading (or the top): bare tags merged, deduped, and sorted onto one line; a tag with trailing text (e.g. a meeting date) kept on its own line; multi-tag lines split per tag; redundant closing `#` stripped. Tags mid-prose stay put. |
+| 8 | `title-case` | The note's title (a first-line heading) is title-cased: small words lowercased in the middle, first and last always capitalized, words with an interior capital (URL, iPhone) left alone, nothing else lowercased. Other headings keep their casing. |
+| 9 | `heading-levels` | Biggest heading promoted to H1 (or H2 when the note opens with prose — Bear treats line 1 as the title); no heading jumps more than one level deeper than the previous. Multiple/zero H1s are fine. |
+| 10 | `layout` | One blank line around every block; tag-led lines hug the heading; a single newline between prose lines becomes a paragraph break (Bear model); blockquote paragraphs split with empty `>` lines (`> \|` keeps them together); consecutive wikilink-only lines are a contiguous table of contents; list indent → tabs; no blanks between same-kind items (bullets and todos are one list; a numbered list is separate and gets a blank); a multi-paragraph item gets a trailing blank (symmetric with the blank before its nested content); blanks around root lists; whole-line bold labels (`**Label:**`) are their own block; a trailing horizontal rule is stripped; no leading/trailing blanks. |
+| 11 | `final-newline` | Exactly one trailing newline. |
 
 ## Design notes
 
 - **Tags parse from text** (no database): a tag is `#` + non-space characters,
   optionally closed with `#`. This runs identically against files or the DB.
+- **Newlines are paragraph breaks.** Bear wraps text automatically, so a manual
+  newline always means a new paragraph; consecutive prose lines are split with a
+  blank line (an explicit two-space hard break keeps lines together).
+- **Keep lines together with a leading `|`.** A line starting with `|` is a
+  table row, and consecutive rows stay contiguous — so a leading pipe is a simple
+  "don't split these into paragraphs" marker (address blocks, verse, etc.).
+  Blanks between pipe lines are removed and a blank is enforced after the block.
+  (Bear renders a lone `| text` line with a visible pipe unless it's a real table
+  with a `| --- |` separator row.)
 - **Idempotence** is the contract and is checked in `tests/integration.rs`; it
   also held across 60 real notes during development.
 

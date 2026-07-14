@@ -1,23 +1,23 @@
 //! **tags** — Bear tags, tidied.
 //!
-//! A line made up entirely of tags is metadata: such lines are gathered,
-//! deduped, sorted, and moved to the top — right under the first heading, or
-//! the very top if there is none — on a single line. A line that mixes tags
-//! with prose stays put, but each tag begins a new line carrying the text that
-//! follows it. A redundant closing `#` is stripped from any tag without spaces.
-//! Tags inside code are ignored.
+//! A line that *starts* with a tag is metadata: it is gathered and moved to the
+//! top — right under the first heading, or the very top if there is none. Bare
+//! tags are merged, deduped, and sorted onto one line; a tag carrying trailing
+//! text (like a meeting date) keeps that text on its own line. Multiple tags on
+//! one line are split so each keeps the text that follows it. A redundant
+//! closing `#` is stripped. Tags mid-prose (not at the line start) and tags
+//! inside code are left where they are.
 
 use std::collections::HashSet;
 
 use crate::engine::ignore::IgnoreRanges;
 use crate::engine::Rule;
-use crate::rules::support::heading_level;
+use crate::rules::support::{heading_level, starts_with_tag};
 
 pub struct Tags;
 
 enum Classified {
     Verbatim { text: String, heading: bool },
-    Replaced(Vec<String>),
     Removed,
 }
 
@@ -28,7 +28,8 @@ impl Rule for Tags {
 
     fn apply(&self, text: &str, ignore: &IgnoreRanges) -> String {
         let mut classified = Vec::new();
-        let mut gathered = Vec::new();
+        let mut bare = Vec::new();
+        let mut annotated = Vec::new();
         let mut start = 0;
         for piece in text.split_inclusive('\n') {
             let content = piece.strip_suffix('\n').unwrap_or(piece);
@@ -37,11 +38,15 @@ impl Rule for Tags {
                     text: content.to_string(),
                     heading: false,
                 });
-            } else if let Some(tags) = pure_tag_line(content) {
-                gathered.extend(tags);
+            } else if starts_with_tag(content) {
+                for entry in split_mixed(content) {
+                    if entry.split_whitespace().count() > 1 {
+                        annotated.push(entry);
+                    } else {
+                        bare.push(entry);
+                    }
+                }
                 classified.push(Classified::Removed);
-            } else if is_mixed_tag_line(content) {
-                classified.push(Classified::Replaced(split_mixed(content)));
             } else {
                 classified.push(Classified::Verbatim {
                     text: content.to_string(),
@@ -61,14 +66,20 @@ impl Rule for Tags {
                     }
                     lines.push(text);
                 }
-                Classified::Replaced(replacements) => lines.extend(replacements),
                 Classified::Removed => {}
             }
         }
 
-        if !gathered.is_empty() {
-            let insert_at = anchor.map_or(0, |index| index + 1);
-            lines.insert(insert_at, merge_and_sort(gathered));
+        // The top block: merged bare tags on one line, then annotated lines.
+        let mut top = Vec::new();
+        if !bare.is_empty() {
+            top.push(merge_and_sort(bare));
+        }
+        top.extend(annotated);
+
+        let insert_at = anchor.map_or(0, |index| index + 1);
+        for (offset, line) in top.into_iter().enumerate() {
+            lines.insert(insert_at + offset, line);
         }
 
         let joined = lines.join("\n");
@@ -80,25 +91,8 @@ impl Rule for Tags {
     }
 }
 
-/// If every whitespace-separated token is a tag, return them normalized.
-fn pure_tag_line(line: &str) -> Option<Vec<String>> {
-    let tags: Option<Vec<String>> = line.split_whitespace().map(normalize_tag).collect();
-    tags.filter(|found| !found.is_empty())
-}
-
-/// Whether `line` starts with a tag but also carries non-tag text.
-fn is_mixed_tag_line(line: &str) -> bool {
-    let mut tokens = line.split_whitespace();
-    match tokens.next() {
-        Some(first) if normalize_tag(first).is_some() => {
-            tokens.any(|token| normalize_tag(token).is_none())
-        }
-        _ => false,
-    }
-}
-
-/// Split a mixed line so each tag starts a new line carrying the text after it,
-/// preserving the original indentation.
+/// Split a tag-led line so each tag starts a new entry carrying the text after
+/// it, preserving the original indentation.
 fn split_mixed(line: &str) -> Vec<String> {
     let indent = &line[..line.len() - line.trim_start().len()];
     let mut lines = Vec::new();
@@ -169,7 +163,15 @@ mod tests {
     }
 
     #[test]
-    fn splits_mixed_line_in_place() {
+    fn moves_a_tag_with_a_date_to_the_top() {
+        assert_eq!(
+            apply("# Dialpad\nnotes here\n#media/meeting 4/10/2023"),
+            "# Dialpad\n#media/meeting 4/10/2023\nnotes here"
+        );
+    }
+
+    #[test]
+    fn splits_a_multi_tag_line() {
         assert_eq!(
             apply("#idea a feature #todo write it"),
             "#idea a feature\n#todo write it"

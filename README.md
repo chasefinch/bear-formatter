@@ -1,6 +1,6 @@
 # bear-formatter 🐻
 
-A cute little formatter for your Bear notes. The command is **`bear-format`**.
+A formatter for your Bear notes. The command is **`bear-format`**.
 
 **bear-format tidies the Markdown in your [Bear](https://bear.app) notes** —
 consistent headings, bullets, spacing, tags, and more. It's a pure formatter

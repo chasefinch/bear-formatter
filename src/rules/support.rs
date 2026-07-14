@@ -17,21 +17,17 @@ pub fn heading_level(line: &str) -> Option<usize> {
     }
 }
 
-/// Whether every whitespace-separated token on `line` is a Bear tag (so the
-/// line is metadata, not prose).
-pub fn is_pure_tag_line(line: &str) -> bool {
-    let mut any = false;
-    for token in line.split_whitespace() {
-        any = true;
-        let Some(inner) = token.strip_prefix('#') else {
-            return false;
-        };
-        let core = inner.strip_suffix('#').unwrap_or(inner);
-        if core.is_empty() || core.contains('#') {
-            return false;
-        }
-    }
-    any
+/// Whether `line`'s first token is a Bear tag — so the line is tag-led metadata,
+/// even when it carries trailing text (like a date after the tag).
+pub fn starts_with_tag(line: &str) -> bool {
+    let Some(token) = line.split_whitespace().next() else {
+        return false;
+    };
+    let Some(inner) = token.strip_prefix('#') else {
+        return false;
+    };
+    let core = inner.strip_suffix('#').unwrap_or(inner);
+    !core.is_empty() && !core.contains('#')
 }
 
 /// The indentation width (in leading whitespace characters) if `line` is a list
@@ -63,4 +59,12 @@ fn starts_list_marker(rest: &str) -> bool {
         }
     }
     false
+}
+
+/// Whether a list-item `line` uses an ordered (numbered) marker rather than a
+/// bullet. Bullets and todos are one kind; numbered items are another.
+pub fn is_ordered_item(line: &str) -> bool {
+    let rest = line.trim_start_matches([' ', '\t']);
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    digits > 0 && matches!(rest.as_bytes().get(digits), Some(b'.' | b')'))
 }
