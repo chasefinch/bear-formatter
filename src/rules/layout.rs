@@ -17,7 +17,7 @@
 
 use crate::engine::ignore::IgnoreRanges;
 use crate::engine::Rule;
-use crate::rules::support::{heading_level, is_pure_tag_line, list_item_indent};
+use crate::rules::support::{heading_level, list_item_indent, starts_with_tag};
 
 pub struct Layout;
 
@@ -44,6 +44,7 @@ impl Rule for Layout {
         let mut lines: Vec<String> = Vec::new();
         let mut previous: Option<Group> = None;
         let mut had_blank = false;
+        let mut hard_break = false;
         let mut list_depths: Vec<usize> = Vec::new();
         let mut start = 0;
         for piece in text.split_inclusive('\n') {
@@ -67,13 +68,23 @@ impl Rule for Layout {
             };
 
             if let Some(prev) = previous {
-                for _ in 0..desired_blanks(prev, group, had_blank) {
+                for _ in 0..desired_blanks(prev, group, had_blank, hard_break) {
                     lines.push(String::new());
                 }
             }
+            hard_break = rendered.ends_with("  ");
             lines.push(rendered);
             previous = Some(group);
             had_blank = false;
+        }
+
+        // A note should not end with a horizontal rule (or one trailed by
+        // blanks). Only a real thematic break is stripped, never code content.
+        if previous == Some(Group::Rule) {
+            lines.pop();
+            while lines.last().is_some_and(|line| line.trim().is_empty()) {
+                lines.pop();
+            }
         }
 
         let joined = lines.join("\n");
@@ -92,7 +103,7 @@ fn classify(content: &str, is_code: bool) -> Group {
     if heading_level(content).is_some() {
         return Group::Heading;
     }
-    if is_pure_tag_line(content) {
+    if starts_with_tag(content) {
         return Group::Tag;
     }
     if list_item_indent(content).is_some() {
@@ -128,17 +139,26 @@ fn is_label_line(trimmed: &str) -> bool {
 }
 
 /// How many blank lines belong between two adjacent blocks.
-fn desired_blanks(previous: Group, current: Group, had_blank: bool) -> usize {
-    let keep = usize::from(had_blank);
+///
+/// In Bear a single newline is a paragraph break (the editor wraps text; you
+/// never hand-break inside a paragraph), so consecutive prose lines are split
+/// with a blank line — unless the previous line ends with an explicit two-space
+/// hard break.
+fn desired_blanks(
+    previous: Group,
+    current: Group,
+    had_blank: bool,
+    prev_hard_break: bool,
+) -> usize {
     match (previous, current) {
         (Group::ListItem, Group::ListItem) => 0,
-        (Group::ListItem | Group::ListCont, Group::ListCont) => keep,
+        (Group::ListItem | Group::ListCont, Group::ListCont) => usize::from(had_blank),
         (Group::ListCont, Group::ListItem) => 1,
-        (Group::Heading, Group::Tag) => 0,
+        (Group::Heading, Group::Tag) | (Group::Tag, Group::Tag) => 0,
         (Group::Code, Group::Code)
         | (Group::Quote, Group::Quote)
         | (Group::Table, Group::Table) => 0,
-        (Group::Para, Group::Para) => keep,
+        (Group::Para, Group::Para) => usize::from(!prev_hard_break),
         _ => 1,
     }
 }
@@ -226,6 +246,34 @@ mod tests {
     fn bold_label_line_becomes_its_own_block() {
         assert_eq!(apply("**Label:**\ntext"), "**Label:**\n\ntext");
         assert_eq!(apply("para\n**Note**\nmore"), "para\n\n**Note**\n\nmore");
+    }
+
+    #[test]
+    fn tag_led_line_hugs_the_heading() {
+        // A tag with a trailing date is still a tag line — no blank above it.
+        assert_eq!(
+            apply("# T\n#media/meeting 1/28/23\nBody"),
+            "# T\n#media/meeting 1/28/23\n\nBody"
+        );
+    }
+
+    #[test]
+    fn single_newline_becomes_a_paragraph_break() {
+        assert_eq!(
+            apply("one thought\nanother thought"),
+            "one thought\n\nanother thought"
+        );
+    }
+
+    #[test]
+    fn hard_break_stays_attached() {
+        assert_eq!(apply("line one  \nline two"), "line one  \nline two");
+    }
+
+    #[test]
+    fn strips_a_trailing_horizontal_rule() {
+        assert_eq!(apply("# T\nbody\n\n---"), "# T\n\nbody");
+        assert_eq!(apply("body\n---\n"), "body\n");
     }
 
     #[test]
