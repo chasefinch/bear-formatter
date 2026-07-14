@@ -11,12 +11,10 @@
 //! - [`engine`] — the formatting engine: [`engine::Formatter`], the
 //!   [`engine::Rule`] trait, and the ignore-range machinery.
 //! - [`rules`] — the rule catalog ([`rules::all`]).
-//! - [`bear`] — the read-only Bear database reader.
-//! - [`config`] — `bear-formatter.toml` discovery.
+//! - [`bear`] — the Bear database reader and bearcli write-back.
 //! - [`cli`] — wires the above together for the binary.
 
 pub mod bear;
 pub mod cli;
-pub mod config;
 pub mod engine;
 pub mod rules;

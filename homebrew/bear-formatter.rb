@@ -16,6 +16,6 @@ class BearFormatter < Formula
   end
 
   test do
-    assert_equal "hello\n", shell_output("#{bin}/bear-formatter --code hello")
+    assert_equal "hello\n", shell_output("#{bin}/bear-format --code hello")
   end
 end

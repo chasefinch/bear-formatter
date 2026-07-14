@@ -5,7 +5,9 @@
 //! only ever reads. Fixes are applied through Bear's own CLI (a later concern),
 //! so sync state and those caches stay consistent.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use rusqlite::{Connection, OpenFlags};
 
@@ -112,6 +114,45 @@ impl BearDatabase {
     }
 }
 
+/// The path to Bear's bundled CLI, if it is installed.
+pub fn bearcli_path() -> Option<PathBuf> {
+    let path = PathBuf::from("/Applications/Bear.app/Contents/MacOS/bearcli");
+    path.is_file().then_some(path)
+}
+
+/// Overwrite a note's entire content through Bear's CLI, preserving the
+/// modification date. Content is written on stdin so it lands verbatim, and the
+/// attachment-removal safety gate is left on (no `--force`) — a write that would
+/// drop an attachment is rejected rather than silently destructive.
+pub fn overwrite_note(bearcli: &Path, id: &str, content: &str) -> Result<(), BearError> {
+    let launch = |source| BearError::Bearcli {
+        id: id.to_string(),
+        source,
+    };
+    let mut child = Command::new(bearcli)
+        .args(["overwrite", id, "--no-update-modified"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(launch)?;
+    child
+        .stdin
+        .take()
+        .expect("stdin is piped")
+        .write_all(content.as_bytes())
+        .map_err(launch)?;
+    let output = child.wait_with_output().map_err(launch)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(BearError::Overwrite {
+            id: id.to_string(),
+            message: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        })
+    }
+}
+
 // Columns are qualified with `ZSFNOTE.` throughout: the tag query joins
 // `ZSFNOTETAG`, which shares several column names (ZUNIQUEIDENTIFIER,
 // ZENCRYPTED, ZMODIFICATIONDATE, …), so unqualified references are ambiguous.
@@ -142,4 +183,21 @@ pub enum BearError {
     /// A query against the database failed.
     #[error("a Bear database query failed")]
     Query(#[source] rusqlite::Error),
+    /// bearcli could not be launched.
+    #[error("could not run bearcli for note {id}")]
+    Bearcli {
+        /// The note being written.
+        id: String,
+        /// The underlying process error.
+        #[source]
+        source: std::io::Error,
+    },
+    /// bearcli rejected the overwrite.
+    #[error("bearcli rejected the write for note {id}: {message}")]
+    Overwrite {
+        /// The note being written.
+        id: String,
+        /// bearcli's stderr message.
+        message: String,
+    },
 }

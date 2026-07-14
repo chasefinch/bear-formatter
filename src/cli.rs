@@ -1,128 +1,195 @@
-//! Command-line interface: argument parsing and output.
+//! Command-line interface: argument parsing, in-place formatting, and output.
 
-use std::path::PathBuf;
+use std::fs;
+use std::io::Read;
+use std::path::Path;
 use std::process::ExitCode;
 
-use clap::{ArgGroup, Parser};
+use anyhow::Context;
+use clap::Parser;
 
-use crate::bear::{BearDatabase, Note, Selector};
-use crate::config::Config;
+use crate::bear::{self, BearDatabase, Note, Selector};
 use crate::engine::Formatter;
 use crate::rules;
 
 /// A cute little formatter for Bear notes. 🐻
+///
+/// Formats in place. Pass a Bear database — its notes are rewritten through
+/// Bear's CLI — and/or Markdown files or globs, which are rewritten on disk.
 #[derive(Parser)]
-#[command(name = "bear-formatter", version, about)]
-#[command(group(
-    ArgGroup::new("target")
-        .required(true)
-        .multiple(false)
-        .args(["note", "tag", "all", "code"])
-))]
+#[command(name = "bear-format", version, about)]
 struct Cli {
-    /// Format a single note by its Bear unique identifier.
-    #[arg(short = 'n', long, value_name = "UUID")]
-    note: Option<String>,
+    /// Bear databases and/or Markdown files or globs to format in place.
+    #[arg(value_name = "PATH")]
+    paths: Vec<String>,
 
-    /// Format every note under a tag, including nested tags.
-    #[arg(short = 't', long, value_name = "TAG")]
-    tag: Option<String>,
-
-    /// Format the whole database.
-    #[arg(short = 'a', long)]
-    all: bool,
-
-    /// Format a Markdown string directly and print the result. No database access.
-    #[arg(short = 'c', long, value_name = "MARKDOWN")]
+    /// Format a Markdown string and print the result; write nothing.
+    #[arg(short = 'c', long, value_name = "MARKDOWN", conflicts_with = "paths")]
     code: Option<String>,
 
-    /// Path to the Bear database (defaults to Bear's group container).
-    #[arg(long, value_name = "PATH")]
-    database: Option<PathBuf>,
+    /// Show what would change without writing anything.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 /// Parse arguments, run the formatter, and return a process exit code.
 pub fn run() -> ExitCode {
-    let cli = Cli::parse();
-    match execute(&cli) {
+    match execute(&Cli::parse()) {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("bear-formatter: {error:#}");
+            eprintln!("bear-format: {error:#}");
             ExitCode::FAILURE
         }
     }
 }
 
 fn execute(cli: &Cli) -> anyhow::Result<ExitCode> {
-    let config = Config::discover(&std::env::current_dir()?)?;
     let formatter = Formatter::new(rules::all());
 
-    // The live path today: format a string straight to stdout.
     if let Some(markdown) = cli.code.as_deref() {
         print!("{}", formatter.format(markdown));
         return Ok(ExitCode::SUCCESS);
     }
-
-    let selector = selector_from(cli).expect("clap guarantees exactly one target");
-    let path = resolve_database_path(cli, &config)?;
-    let notes = BearDatabase::open(&path)?.select(&selector)?;
-    report_notes(&formatter, &notes);
-    Ok(ExitCode::SUCCESS)
-}
-
-fn selector_from(cli: &Cli) -> Option<Selector> {
-    if let Some(identifier) = &cli.note {
-        return Some(Selector::Note(identifier.clone()));
-    }
-    if let Some(tag) = &cli.tag {
-        return Some(Selector::Tag(tag.clone()));
-    }
-    if cli.all {
-        return Some(Selector::All);
-    }
-    None
-}
-
-fn resolve_database_path(cli: &Cli, config: &Config) -> anyhow::Result<PathBuf> {
-    if let Some(path) = &cli.database {
-        return Ok(path.clone());
-    }
-    if let Some(path) = &config.database {
-        return Ok(path.clone());
-    }
-    BearDatabase::default_path()
-        .ok_or_else(|| anyhow::anyhow!("could not locate the Bear database; pass --database"))
-}
-
-/// Format each note and report which ones would change.
-///
-/// This is temporary: until write-back through Bear's CLI is wired, database
-/// targets read and preview rather than mutate. Once write-back lands, this
-/// becomes the actual reformat.
-fn report_notes(formatter: &Formatter, notes: &[Note]) {
-    if notes.is_empty() {
-        println!("No matching notes.");
-        return;
+    if cli.paths.is_empty() {
+        anyhow::bail!("nothing to do — pass a Bear database or Markdown file/glob, or --code");
     }
 
-    let mut changed = 0;
-    for note in notes {
-        if formatter.format(&note.text) != note.text {
-            changed += 1;
-            let title = if note.title.is_empty() {
-                "(untitled)"
+    let mut report = Report::default();
+    for pattern in &cli.paths {
+        let matches =
+            glob::glob(pattern).with_context(|| format!("bad path or glob: {pattern}"))?;
+        let mut matched_any = false;
+        for entry in matches {
+            matched_any = true;
+            let path = entry?;
+            if is_sqlite(&path)? {
+                format_database(&path, &formatter, cli.dry_run, &mut report)?;
             } else {
-                note.title.as_str()
-            };
-            println!("\x1b[1m{title}\x1b[0m \x1b[2m{}\x1b[0m", note.identifier);
+                format_file(&path, &formatter, cli.dry_run, &mut report)?;
+            }
+        }
+        if !matched_any {
+            eprintln!("bear-format: no files matched {pattern}");
         }
     }
 
-    if changed == 0 {
-        println!("All {} note(s) are already tidy 🐻", notes.len());
+    report.print(cli.dry_run);
+    Ok(report.exit_code())
+}
+
+/// Running totals across everything formatted this run.
+#[derive(Default)]
+struct Report {
+    files_changed: usize,
+    files_total: usize,
+    notes_changed: usize,
+    notes_total: usize,
+    failures: Vec<String>,
+}
+
+impl Report {
+    fn print(&self, dry_run: bool) {
+        let verb = if dry_run { "would be" } else { "were" };
+        if self.files_total > 0 {
+            println!(
+                "{} of {} file(s) {verb} reformatted.",
+                self.files_changed, self.files_total
+            );
+        }
+        if self.notes_total > 0 {
+            println!(
+                "{} of {} note(s) {verb} reformatted.",
+                self.notes_changed, self.notes_total
+            );
+        }
+        if self.files_total == 0 && self.notes_total == 0 {
+            println!("Nothing to format.");
+        }
+        for failure in &self.failures {
+            eprintln!("🐾 \x1b[91m{failure}\x1b[0m");
+        }
+    }
+
+    fn exit_code(&self) -> ExitCode {
+        if self.failures.is_empty() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Format one Markdown file, rewriting it in place unless `dry_run`.
+fn format_file(
+    path: &Path,
+    formatter: &Formatter,
+    dry_run: bool,
+    report: &mut Report,
+) -> anyhow::Result<()> {
+    let original =
+        fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    report.files_total += 1;
+    let formatted = formatter.format(&original);
+    if formatted == original {
+        return Ok(());
+    }
+    report.files_changed += 1;
+    if dry_run {
+        println!("{}", path.display());
     } else {
-        println!();
-        println!("{changed} of {} note(s) would be reformatted.", notes.len());
-        println!("\x1b[2mWrite-back via bearcli isn't enabled yet.\x1b[0m");
+        fs::write(path, formatted).with_context(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
+}
+
+/// Format every note in a Bear database, writing each changed note back through
+/// bearcli unless `dry_run`.
+fn format_database(
+    path: &Path,
+    formatter: &Formatter,
+    dry_run: bool,
+    report: &mut Report,
+) -> anyhow::Result<()> {
+    let notes = BearDatabase::open(path)?.select(&Selector::All)?;
+    let bearcli = if dry_run {
+        None
+    } else {
+        Some(bear::bearcli_path().context("bearcli not found — is Bear installed?")?)
+    };
+
+    for note in &notes {
+        report.notes_total += 1;
+        let formatted = formatter.format(&note.text);
+        if formatted == note.text {
+            continue;
+        }
+        report.notes_changed += 1;
+        match &bearcli {
+            None => println!("{}  \x1b[2m{}\x1b[0m", label(note), note.identifier),
+            Some(cli) => {
+                if let Err(error) = bear::overwrite_note(cli, &note.identifier, &formatted) {
+                    report.failures.push(format!("{}: {error}", label(note)));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn label(note: &Note) -> &str {
+    if note.title.is_empty() {
+        "(untitled)"
+    } else {
+        note.title.as_str()
+    }
+}
+
+/// Whether `path` is a SQLite database (by its magic header), not Markdown.
+fn is_sqlite(path: &Path) -> anyhow::Result<bool> {
+    let mut file = fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut header = [0u8; 16];
+    match file.read_exact(&mut header) {
+        Ok(()) => Ok(&header == b"SQLite format 3\0"),
+        Err(_) => Ok(false),
     }
 }

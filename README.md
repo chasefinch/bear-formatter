@@ -1,16 +1,12 @@
 # bear-formatter 🐻
 
-A cute little formatter for your Bear notes.
+A cute little formatter for your Bear notes. The command is **`bear-format`**.
 
-**bear-formatter tidies the Markdown in your [Bear](https://bear.app) notes** —
-consistent bullets, spacing, headings, and more. It's a pure formatter (think
-gofmt, not a linter): notes in, canonical notes out. It reads straight from
-Bear's database and — soon — writes fixes back through Bear's own CLI so your
-notes stay in sync.
-
-> ⚠️ **Early days.** The engine, CLI, and read-only Bear reader are in place with
-> one demonstrator rule (`final-newline`). The real rule catalog, write-back, and
-> the Homebrew formula are next.
+**bear-format tidies the Markdown in your [Bear](https://bear.app) notes** —
+consistent headings, bullets, spacing, tags, and more. It's a pure formatter
+(think gofmt, not a linter): notes in, canonical notes out. It reads from Bear's
+database and writes fixes back through Bear's own CLI, so sync state stays
+intact.
 
 ## Install
 
@@ -20,47 +16,50 @@ Homebrew (pre-release — builds from `main`):
 brew install --HEAD chasefinch/tap/bear-formatter
 ```
 
-The tagged `brew install chasefinch/tap/bear-formatter` lands with the first release.
-
 From source:
 
 ```bash
 git clone --recurse-submodules https://github.com/chasefinch/bear-formatter.git
 cd bear-formatter
-make build   # binary at target/release/bear-formatter
+make build   # binary at target/release/bear-format
 ```
 
 ## Usage
 
-Format a Markdown string — the live path today:
+`bear-format` edits **in place**. Point it at a Bear database (notes are
+rewritten through Bear's CLI) and/or Markdown files or globs (rewritten on
+disk):
 
 ```bash
-bear-formatter --code "# Title
+bear-format ~/Library/Group\ Containers/9K33E3U3T4.net.shinyfrog.bear/Application\ Data/database.sqlite
+bear-format "vault/**/*.md"
+bear-format note.md another.md
+```
+
+Preview first with `--dry-run` — it writes nothing and lists what would change:
+
+```bash
+bear-format --dry-run "vault/**/*.md"
+```
+
+Format a Markdown string straight to stdout (touches nothing):
+
+```bash
+bear-format --code "# Title
 - item"
 ```
 
-Format notes from your Bear database — a single note, a tag (including nested
-tags), or everything:
+## How it works
 
-```bash
-bear-formatter --all                 # every note
-bear-formatter --tag Recipes         # #Recipes and #Recipes/*
-bear-formatter --note <UUID>         # one note
-```
+bear-format opens a Bear database **read-only** and treats `ZSFNOTE.ZTEXT` as
+the source of truth (trashed, deleted, and encrypted notes are skipped). It
+never writes the SQLite file directly — each changed note is written back with
+`bearcli overwrite … --no-update-modified`, which keeps Bear's sync state and
+derived caches consistent and preserves modification dates. bearcli's
+attachment-removal safety gate is left on, so a formatting change that would drop
+an attachment is rejected rather than applied.
 
-Until write-back lands, database targets report which notes *would* change.
-Point at a copy while experimenting:
-
-```bash
-bear-formatter --all --database /path/to/a/copy.sqlite
-```
-
-## How it reads Bear
-
-bear-formatter opens Bear's SQLite database **read-only** and treats
-`ZSFNOTE.ZTEXT` as the source of truth. Trashed, deleted, and encrypted notes
-are skipped. It never writes to the database directly — fixes will be applied
-through Bear's CLI so sync state stays intact.
+The rules are documented in [`docs/rules.md`](docs/rules.md).
 
 ## Development
 
