@@ -22,7 +22,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 thiserror = "2.0"
 anyhow = "1.0"
-dirs = "5.0"
+dirs = "6.0"
 glob = "0.3"
 
 [profile.release]
