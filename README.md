@@ -1,2 +1,2 @@
-# bear-linter
-A linter for markdown files in Bear.
+# bear-formatter
+A formatter for Markdown files in Bear.
