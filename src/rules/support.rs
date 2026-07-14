@@ -60,3 +60,11 @@ fn starts_list_marker(rest: &str) -> bool {
     }
     false
 }
+
+/// Whether a list-item `line` uses an ordered (numbered) marker rather than a
+/// bullet. Bullets and todos are one kind; numbered items are another.
+pub fn is_ordered_item(line: &str) -> bool {
+    let rest = line.trim_start_matches([' ', '\t']);
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    digits > 0 && matches!(rest.as_bytes().get(digits), Some(b'.' | b')'))
+}

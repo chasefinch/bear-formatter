@@ -5,7 +5,8 @@
 //! Blank lines are regenerated from block structure:
 //! - one blank line between differing blocks (headings, paragraphs, code,
 //!   quotes, tables, rules, lists);
-//! - none between consecutive list items;
+//! - none between consecutive same-kind list items (bullets and todos are one
+//!   kind; a numbered list next to them is a different list, so it gets a blank);
 //! - none between a heading and a tag line that follows it (one after);
 //! - inside a list, a blank between an item and its continuation paragraph is
 //!   kept, and a multi-paragraph item is followed by a blank before the next
@@ -17,7 +18,7 @@
 
 use crate::engine::ignore::IgnoreRanges;
 use crate::engine::Rule;
-use crate::rules::support::{heading_level, list_item_indent, starts_with_tag};
+use crate::rules::support::{heading_level, is_ordered_item, list_item_indent, starts_with_tag};
 
 pub struct Layout;
 
@@ -46,7 +47,7 @@ impl Rule for Layout {
         let mut previous: Option<Group> = None;
         let mut had_blank = false;
         let mut hard_break = false;
-        let mut list_depths: Vec<usize> = Vec::new();
+        let mut levels: Vec<Level> = Vec::new();
         let mut start = 0;
         for piece in text.split_inclusive('\n') {
             let content = piece.strip_suffix('\n').unwrap_or(piece);
@@ -64,17 +65,23 @@ impl Rule for Layout {
             }
 
             let group = classify(content, is_code);
-            let rendered = match group {
-                Group::ListItem => retab_item(content, &mut list_depths),
-                Group::ListCont => retab_continuation(content, &list_depths),
+            let previous_is_list = matches!(previous, Some(Group::ListItem | Group::ListCont));
+            let (rendered, list_blank) = match group {
+                Group::ListItem => place_item(content, &mut levels, had_blank),
+                Group::ListCont => place_cont(content, &mut levels, had_blank),
                 _ => {
-                    list_depths.clear();
-                    content.to_string()
+                    levels.clear();
+                    (content.to_string(), false)
                 }
             };
 
             if let Some(prev) = previous {
-                let (count, separator) = gap(prev, group, had_blank, hard_break, &rendered);
+                let current_is_list = matches!(group, Group::ListItem | Group::ListCont);
+                let (count, separator) = if previous_is_list && current_is_list {
+                    (usize::from(list_blank), "")
+                } else {
+                    gap(prev, group, hard_break, &rendered)
+                };
                 for _ in 0..count {
                     lines.push(separator.to_string());
                 }
@@ -141,7 +148,6 @@ fn classify(content: &str, is_code: bool) -> Group {
 fn gap(
     previous: Group,
     current: Group,
-    had_blank: bool,
     prev_hard_break: bool,
     current_line: &str,
 ) -> (usize, &'static str) {
@@ -153,10 +159,7 @@ fn gap(
         let keep_together = prev_hard_break || inner.starts_with('|');
         return (usize::from(!keep_together), ">");
     }
-    (
-        desired_blanks(previous, current, had_blank, prev_hard_break),
-        "",
-    )
+    (desired_blanks(previous, current, prev_hard_break), "")
 }
 
 /// The content of a blockquote line after its `>` marker.
@@ -199,16 +202,8 @@ fn is_label_line(trimmed: &str) -> bool {
 /// never hand-break inside a paragraph), so consecutive prose lines are split
 /// with a blank line — unless the previous line ends with an explicit two-space
 /// hard break.
-fn desired_blanks(
-    previous: Group,
-    current: Group,
-    had_blank: bool,
-    prev_hard_break: bool,
-) -> usize {
+fn desired_blanks(previous: Group, current: Group, prev_hard_break: bool) -> usize {
     match (previous, current) {
-        (Group::ListItem, Group::ListItem) => 0,
-        (Group::ListItem | Group::ListCont, Group::ListCont) => usize::from(had_blank),
-        (Group::ListCont, Group::ListItem) => 1,
         (Group::Heading, Group::Tag) | (Group::Tag, Group::Tag) => 0,
         (Group::Code, Group::Code) => 0,
         // Consecutive wikilink-only lines read as a table of contents.
@@ -222,30 +217,84 @@ fn desired_blanks(
     }
 }
 
-/// Retab a list-item line: update the depth stack and re-indent with tabs.
-fn retab_item(content: &str, depths: &mut Vec<usize>) -> String {
-    let width = list_item_indent(content).unwrap_or(0);
-    while depths.last().is_some_and(|&top| width < top) {
-        depths.pop();
-    }
-    let deeper = match depths.last() {
-        None => true,
-        Some(&top) => width > top,
-    };
-    if deeper {
-        depths.push(width);
-    }
-    let depth = depths.len().saturating_sub(1);
-    let rest = content.trim_start_matches([' ', '\t']);
-    format!("{}{}", "\t".repeat(depth), rest)
+/// A list kind: bullets and todos are `Bullet`; numbered items are `Ordered`.
+/// A numbered list beside a bulleted one is a *different* list.
+#[derive(Clone, Copy, PartialEq)]
+enum ListKind {
+    Bullet,
+    Ordered,
 }
 
-/// A continuation line keeps its text but is indented one level past the
-/// current list depth.
-fn retab_continuation(content: &str, depths: &[usize]) -> String {
-    let depth = depths.len();
+fn list_kind(content: &str) -> ListKind {
+    if is_ordered_item(content) {
+        ListKind::Ordered
+    } else {
+        ListKind::Bullet
+    }
+}
+
+/// One open list level: its indent width, whether the current item is loose
+/// (multi-paragraph), and its list kind.
+struct Level {
+    width: usize,
+    loose: bool,
+    kind: ListKind,
+}
+
+/// Place a list-item line: adjust the level stack and return the retabbed line
+/// plus whether a blank should precede it. A blank precedes a sibling when the
+/// previous item here was loose (multi-paragraph) or when the list kind changes
+/// (a numbered list next to bullets/todos). Nesting adds none.
+fn place_item(content: &str, levels: &mut Vec<Level>, had_blank: bool) -> (String, bool) {
+    let width = list_item_indent(content).unwrap_or(0);
+    let kind = list_kind(content);
+    while levels.last().is_some_and(|level| width < level.width) {
+        levels.pop();
+    }
+    let going_deeper = match levels.last() {
+        None => true,
+        Some(level) => width > level.width,
+    };
+    let blank_before = if going_deeper {
+        // Nested content: a blank before it makes the parent item loose.
+        if had_blank {
+            if let Some(parent) = levels.last_mut() {
+                parent.loose = true;
+            }
+        }
+        levels.push(Level {
+            width,
+            loose: false,
+            kind,
+        });
+        had_blank
+    } else {
+        match levels.last_mut() {
+            Some(level) => {
+                let blank = level.loose || level.kind != kind;
+                level.loose = false;
+                level.kind = kind;
+                blank
+            }
+            None => false,
+        }
+    };
+    let depth = levels.len().saturating_sub(1);
     let rest = content.trim_start_matches([' ', '\t']);
-    format!("{}{}", "\t".repeat(depth), rest)
+    (format!("{}{}", "\t".repeat(depth), rest), blank_before)
+}
+
+/// Place a list continuation line (indented text): it belongs to the deepest
+/// open item, which a preceding blank marks loose. Its blank-before is preserved.
+fn place_cont(content: &str, levels: &mut [Level], had_blank: bool) -> (String, bool) {
+    if had_blank {
+        if let Some(owner) = levels.last_mut() {
+            owner.loose = true;
+        }
+    }
+    let depth = levels.len();
+    let rest = content.trim_start_matches([' ', '\t']);
+    (format!("{}{}", "\t".repeat(depth), rest), had_blank)
 }
 
 fn is_thematic_break(trimmed: &str) -> bool {
@@ -358,6 +407,34 @@ mod tests {
     fn consecutive_wikilinks_are_a_toc() {
         assert_eq!(apply("[[A]]\n[[B]]\n[[C]]"), "[[A]]\n[[B]]\n[[C]]");
         assert_eq!(apply("[[A]]\n\n[[B]]"), "[[A]]\n[[B]]");
+    }
+
+    #[test]
+    fn loose_list_item_gets_a_trailing_blank() {
+        // A multi-paragraph item (nested content separated by a blank) is
+        // followed by a blank before the next sibling — like the blank before it.
+        let input = "- a\n- b\n\n\tnote\n\n\t- x\n\t- y\n- c";
+        assert_eq!(apply(input), "- a\n- b\n\n\tnote\n\n\t- x\n\t- y\n\n- c");
+        let once = apply(input);
+        assert_eq!(apply(&once), once);
+    }
+
+    #[test]
+    fn numbered_list_is_separate_from_bullets() {
+        // Bullets and todos are one list (blank between them removed); a numbered
+        // list is a different one and gets a blank.
+        assert_eq!(
+            apply("- a\n\n- [ ] b\n1. c\n2. d"),
+            "- a\n- [ ] b\n\n1. c\n2. d"
+        );
+    }
+
+    #[test]
+    fn numbered_nested_in_bullets_has_no_extra_spacing() {
+        assert_eq!(
+            apply("- a\n\t1. x\n\t2. y\n- b"),
+            "- a\n\t1. x\n\t2. y\n- b"
+        );
     }
 
     #[test]

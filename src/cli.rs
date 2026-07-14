@@ -24,7 +24,13 @@ struct Cli {
     paths: Vec<String>,
 
     /// Format a Markdown string and print the result; write nothing.
-    #[arg(short = 'c', long, value_name = "MARKDOWN", conflicts_with = "paths")]
+    #[arg(
+        short = 'c',
+        long,
+        value_name = "MARKDOWN",
+        conflicts_with = "paths",
+        allow_hyphen_values = true
+    )]
     code: Option<String>,
 
     /// Show what would change without writing anything.
