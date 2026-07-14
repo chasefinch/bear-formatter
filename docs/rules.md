@@ -13,9 +13,10 @@ Code (fenced, indented, and inline) is left untouched by every rule.
 | 5 | `list-markers` | Bullets → `-`, one space after a marker, drop empty items, collapse duplicated markers. Ordered numbers untouched (no renumbering). |
 | 6 | `footnotes` | Renumber by first-reference order; move definitions to the bottom. |
 | 7 | `tags` | Tag-led lines moved under the first heading (or the top): bare tags merged, deduped, and sorted onto one line; a tag with trailing text (e.g. a meeting date) kept on its own line; multi-tag lines split per tag; redundant closing `#` stripped. Tags mid-prose stay put. |
-| 8 | `heading-levels` | Biggest heading promoted to H1 (or H2 when the note opens with prose — Bear treats line 1 as the title); no heading jumps more than one level deeper than the previous. Multiple/zero H1s are fine. |
-| 9 | `layout` | One blank line around every block; tag-led lines hug the heading; a single newline between prose lines becomes a paragraph break (Bear model); blockquote paragraphs split with empty `>` lines (`> \|` keeps them together); consecutive wikilink-only lines are a contiguous table of contents; list indent → tabs, no blanks between items, blanks around root lists, multi-paragraph items spaced; whole-line bold labels (`**Label:**`) are their own block; a trailing horizontal rule is stripped; no leading/trailing blanks. |
-| 10 | `final-newline` | Exactly one trailing newline. |
+| 8 | `title-case` | The note's title (a first-line heading) is title-cased: small words lowercased in the middle, first and last always capitalized, words with an interior capital (URL, iPhone) left alone, nothing else lowercased. Other headings keep their casing. |
+| 9 | `heading-levels` | Biggest heading promoted to H1 (or H2 when the note opens with prose — Bear treats line 1 as the title); no heading jumps more than one level deeper than the previous. Multiple/zero H1s are fine. |
+| 10 | `layout` | One blank line around every block; tag-led lines hug the heading; a single newline between prose lines becomes a paragraph break (Bear model); blockquote paragraphs split with empty `>` lines (`> \|` keeps them together); consecutive wikilink-only lines are a contiguous table of contents; list indent → tabs, no blanks between items, blanks around root lists, multi-paragraph items spaced; whole-line bold labels (`**Label:**`) are their own block; a trailing horizontal rule is stripped; no leading/trailing blanks. |
+| 11 | `final-newline` | Exactly one trailing newline. |
 
 ## Design notes
 
