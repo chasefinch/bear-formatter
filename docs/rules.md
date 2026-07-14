@@ -26,9 +26,10 @@ Code (fenced, indented, and inline) is left untouched by every rule.
   blank line (an explicit two-space hard break keeps lines together).
 - **Keep lines together with a leading `|`.** A line starting with `|` is a
   table row, and consecutive rows stay contiguous — so a leading pipe is a simple
-  "don't split these into paragraphs" marker (address blocks, verse, etc.). A
-  blank between pipe lines is allowed. (Bear renders a lone `| text` line with a
-  visible pipe unless it's a real table with a `| --- |` separator row.)
+  "don't split these into paragraphs" marker (address blocks, verse, etc.).
+  Blanks between pipe lines are removed and a blank is enforced after the block.
+  (Bear renders a lone `| text` line with a visible pipe unless it's a real table
+  with a `| --- |` separator row.)
 - **Idempotence** is the contract and is checked in `tests/integration.rs`; it
   also held across 60 real notes during development.
 

@@ -156,9 +156,10 @@ fn desired_blanks(
         (Group::ListCont, Group::ListItem) => 1,
         (Group::Heading, Group::Tag) | (Group::Tag, Group::Tag) => 0,
         (Group::Code, Group::Code) | (Group::Quote, Group::Quote) => 0,
-        // Pipe-prefixed lines (table rows) stay together, but a blank between
-        // them is allowed — a handy "don't split these lines" marker.
-        (Group::Table, Group::Table) => usize::from(had_blank),
+        // Pipe-prefixed lines (table rows) are one contiguous block — a "don't
+        // split these" marker. Blanks between them are removed; the blank after
+        // the block is enforced by the default arm below.
+        (Group::Table, Group::Table) => 0,
         (Group::Para, Group::Para) => usize::from(!prev_hard_break),
         _ => 1,
     }
@@ -278,13 +279,13 @@ mod tests {
     }
 
     #[test]
-    fn pipe_lines_group_without_splitting() {
+    fn pipe_lines_stay_contiguous_with_a_blank_after() {
         assert_eq!(
             apply("| John Smith\n| 123 Main St\n| Springfield"),
             "| John Smith\n| 123 Main St\n| Springfield"
         );
-        // A blank between pipe lines is allowed — neither forced nor removed.
-        assert_eq!(apply("| a\n\n| b"), "| a\n\n| b");
+        // Blank between pipe lines removed; blank after the block enforced.
+        assert_eq!(apply("| a\n\n| b\ntext"), "| a\n| b\n\ntext");
     }
 
     #[test]
