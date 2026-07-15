@@ -1,12 +1,13 @@
 //! **tags** — Bear tags, tidied.
 //!
-//! A line that *starts* with a tag is metadata: it is gathered and moved to the
-//! top — right under the first heading, or the very top if there is none. Bare
-//! tags are merged, deduped, and sorted onto one line; a tag carrying trailing
-//! text (like a meeting date) keeps that text on its own line. Multiple tags on
-//! one line are split so each keeps the text that follows it. A redundant
-//! closing `#` is stripped. Tags mid-prose (not at the line start) and tags
-//! inside code are left where they are.
+//! A line that *starts* with a tag is metadata: it is gathered and moved under
+//! the note's opening heading. If the note does not open with a heading, the
+//! tags go to the very bottom instead — otherwise they would become the note's
+//! title and preview. Bare tags are merged, deduped, and sorted onto one line; a
+//! tag carrying trailing text (like a meeting date) keeps that text on its own
+//! line. Multiple tags on one line are split so each keeps the text that follows
+//! it. A redundant closing `#` is stripped. Tags mid-prose (not at the line
+//! start) and tags inside code are left where they are.
 
 use std::collections::HashSet;
 
@@ -58,9 +59,13 @@ impl Rule for Tags {
 
         let mut lines = Vec::new();
         let mut anchor = None;
+        let mut opens_with_heading = None;
         for line in classified {
             match line {
                 Classified::Verbatim { text, heading } => {
+                    if opens_with_heading.is_none() && !text.trim().is_empty() {
+                        opens_with_heading = Some(heading);
+                    }
                     if heading && anchor.is_none() {
                         anchor = Some(lines.len());
                     }
@@ -70,16 +75,22 @@ impl Rule for Tags {
             }
         }
 
-        // The top block: merged bare tags on one line, then annotated lines.
-        let mut top = Vec::new();
+        // Tags gather onto one merged line (bare) plus any annotated lines.
+        let mut block = Vec::new();
         if !bare.is_empty() {
-            top.push(merge_and_sort(bare));
+            block.push(merge_and_sort(bare));
         }
-        top.extend(annotated);
+        block.extend(annotated);
 
-        let insert_at = anchor.map_or(0, |index| index + 1);
-        for (offset, line) in top.into_iter().enumerate() {
-            lines.insert(insert_at + offset, line);
+        // Under the note's opening heading when it has one; otherwise at the very
+        // bottom, so tags never become the note's title or preview snippet.
+        if opens_with_heading.unwrap_or(false) {
+            let insert_at = anchor.map_or(0, |index| index + 1);
+            for (offset, line) in block.into_iter().enumerate() {
+                lines.insert(insert_at + offset, line);
+            }
+        } else {
+            lines.extend(block);
         }
 
         let joined = lines.join("\n");
@@ -158,8 +169,15 @@ mod tests {
     }
 
     #[test]
-    fn moves_to_top_when_no_heading() {
-        assert_eq!(apply("Body.\n#note"), "#note\nBody.");
+    fn moves_to_bottom_when_note_opens_without_a_heading() {
+        // No opening heading → tags go to the bottom, not the top, so they
+        // don't become the title/preview.
+        assert_eq!(apply("#note\nBody."), "Body.\n#note");
+    }
+
+    #[test]
+    fn stays_under_an_opening_heading() {
+        assert_eq!(apply("# Title\nbody\n#a #b"), "# Title\n#a #b\nbody");
     }
 
     #[test]
