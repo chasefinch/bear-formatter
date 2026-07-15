@@ -1,5 +1,8 @@
 # bear-formatter 🐻
 
+[![CI](https://github.com/chasefinch/bear-formatter/actions/workflows/ci.yml/badge.svg)](https://github.com/chasefinch/bear-formatter/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-76%25-yellowgreen)
+
 A formatter for your Bear notes. The command is **`bear-format`**.
 
 **bear-format tidies the Markdown in your [Bear](https://bear.app) notes** —
@@ -10,10 +13,10 @@ intact.
 
 ## Install
 
-Homebrew (pre-release — builds from `main`):
+Homebrew:
 
 ```bash
-brew install --HEAD chasefinch/tap/bear-formatter
+brew install chasefinch/tap/bear-formatter
 ```
 
 From source:

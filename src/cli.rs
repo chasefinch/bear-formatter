@@ -12,7 +12,7 @@ use crate::bear::{self, BearDatabase, Note, Selector};
 use crate::engine::Formatter;
 use crate::rules;
 
-/// A cute little formatter for Bear notes. 🐻
+/// A formatter for Bear notes. 🐻
 ///
 /// Formats in place. Pass a Bear database — its notes are rewritten through
 /// Bear's CLI — and/or Markdown files or globs, which are rewritten on disk.

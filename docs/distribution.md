@@ -7,10 +7,8 @@ copy that is updated on release.
 
 ## Install
 
-Pre-release (builds from `main`):
-
 ```bash
-brew install --HEAD chasefinch/tap/bear-formatter
+brew install chasefinch/tap/bear-formatter
 ```
 
 ## Cutting a release
@@ -25,10 +23,11 @@ brew install --HEAD chasefinch/tap/bear-formatter
    ```bash
    curl -sL https://github.com/chasefinch/bear-formatter/archive/refs/tags/v0.1.0.tar.gz | shasum -a 256
    ```
-4. In `homebrew/bear-formatter.rb`, uncomment the `url`/`sha256` stanza and fill
-   in the version and checksum. Copy the formula to the tap
-   (`chasefinch/homebrew-tap`, `Formula/bear-formatter.rb`) and push.
-5. `brew update && brew upgrade bear-formatter` installs the tagged build.
+4. In `homebrew/bear-formatter.rb`, update the `url`/`sha256` to the new version
+   and checksum. Copy the formula to the tap (`chasefinch/homebrew-tap`,
+   `Formula/bear-formatter.rb`) and push.
+5. Update the coverage badge in `README.md` from `make coverage` (the TOTAL line %).
+6. `brew update && brew upgrade bear-formatter` installs the tagged build.
 
 ## Bottles (later)
 
