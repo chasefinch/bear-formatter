@@ -3,8 +3,10 @@
 //! The biggest heading in the note is promoted so it sits just under the note's
 //! title: to H1 when the note opens with a heading, or to H2 otherwise (Bear
 //! renders a note's first line as its title, so an implicit H1 sits above). The
-//! rest shift with it, and no heading may jump more than one level deeper than
-//! the previous one. Multiple H1s, and notes with no headings, are both fine.
+//! rest shift with it; a heading that would skip levels below its nearest
+//! shallower ancestor is pulled up to sit exactly one level under it, so the
+//! hierarchy has no gaps and sibling headings all land at the same level.
+//! Multiple H1s, and notes with no headings, are both fine.
 
 use crate::engine::ignore::IgnoreRanges;
 use crate::engine::Rule;
@@ -30,20 +32,28 @@ impl Rule for HeadingLevels {
         };
 
         let mut out = String::with_capacity(text.len());
-        let mut previous: Option<usize> = None;
+        // Open ancestors as (shifted level, emitted level). A new heading pops
+        // every sibling or descendant, then sits one level under what remains.
+        let mut ancestors: Vec<(usize, usize)> = Vec::new();
         let mut start = 0;
         for piece in text.split_inclusive('\n') {
             let has_newline = piece.ends_with('\n');
             let content = piece.strip_suffix('\n').unwrap_or(piece);
             let rendered = match heading_level(content) {
                 Some(level) if !ignore.contains(start) => {
-                    let promoted = promote(level, smallest, target_top);
-                    let clamped = match previous {
-                        Some(prev) if promoted > prev + 1 => prev + 1,
-                        _ => promoted,
+                    let shifted = promote(level, smallest, target_top);
+                    while ancestors
+                        .last()
+                        .is_some_and(|&(ancestor, _)| ancestor >= shifted)
+                    {
+                        ancestors.pop();
+                    }
+                    let emitted = match ancestors.last() {
+                        Some(&(_, parent)) => parent + 1,
+                        None => shifted,
                     };
-                    previous = Some(clamped);
-                    rewrite_level(content, clamped)
+                    ancestors.push((shifted, emitted));
+                    rewrite_level(content, emitted)
                 }
                 _ => content.to_string(),
             };
@@ -134,6 +144,22 @@ mod tests {
     #[test]
     fn clamps_deeper_jumps() {
         assert_eq!(apply("# A\n### B"), "# A\n## B");
+    }
+
+    #[test]
+    fn promotes_every_sibling_when_the_biggest_skips_a_level() {
+        assert_eq!(
+            apply("# Title\n### A\n### B\n### C"),
+            "# Title\n## A\n## B\n## C"
+        );
+    }
+
+    #[test]
+    fn keeps_siblings_level_while_removing_gaps() {
+        assert_eq!(
+            apply("# Title\n### A\n##### A1\n### B"),
+            "# Title\n## A\n### A1\n## B"
+        );
     }
 
     #[test]
