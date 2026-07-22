@@ -1,13 +1,13 @@
-//! **list-markers** — unordered bullets become `-`, exactly one space follows a
-//! marker, empty items are dropped, and duplicated markers (from pastes) are
-//! collapsed. Ordered numbers are left as they are — no renumbering.
+//! **list-markers** — unordered bullets become `-`, and a marker followed by any
+//! run of spaces or a tab (as pastes often produce, e.g. `•\t`) is normalized to
+//! exactly one space. Empty items are dropped, and duplicated markers (from
+//! pastes) are collapsed. Ordered numbers are left as they are — no renumbering.
 
 use crate::engine::ignore::IgnoreRanges;
 use crate::engine::Rule;
+use crate::rules::support::BULLETS;
 
 pub struct ListMarkers;
-
-const BULLETS: &[char] = &['-', '*', '+', '•', '§'];
 
 impl Rule for ListMarkers {
     fn name(&self) -> &'static str {
@@ -61,16 +61,19 @@ fn reformat(line: &str) -> Option<String> {
 fn split_marker(rest: &str) -> Option<(&str, &str)> {
     if let Some(marker) = ordered_marker(rest) {
         let after = &rest[marker.len()..];
-        if after.is_empty() || after.starts_with(' ') {
-            return Some((marker, after.trim_start_matches(' ')));
+        if after.is_empty() || after.starts_with([' ', '\t']) {
+            return Some((marker, after.trim_start_matches([' ', '\t'])));
         }
         return None;
     }
     let first = rest.chars().next()?;
     if BULLETS.contains(&first) {
         let after = &rest[first.len_utf8()..];
-        if after.is_empty() || after.starts_with(' ') {
-            return Some((&rest[..first.len_utf8()], after.trim_start_matches(' ')));
+        if after.is_empty() || after.starts_with([' ', '\t']) {
+            return Some((
+                &rest[..first.len_utf8()],
+                after.trim_start_matches([' ', '\t']),
+            ));
         }
     }
     None
@@ -104,8 +107,29 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_more_bullet_glyphs() {
+        assert_eq!(apply("◦ a\n▪ b\n‣ c\n⁃ d\n· e"), "- a\n- b\n- c\n- d\n- e");
+    }
+
+    #[test]
     fn one_space_after_marker() {
         assert_eq!(apply("-    x"), "- x");
+    }
+
+    #[test]
+    fn accepts_a_tab_after_the_marker() {
+        assert_eq!(apply("•\tFoo\n-\tbar\n1.\tbaz"), "- Foo\n- bar\n1. baz");
+    }
+
+    #[test]
+    fn accepts_a_tab_after_a_nested_marker() {
+        assert_eq!(apply("\t•\tBar"), "\t- Bar");
+    }
+
+    #[test]
+    fn is_idempotent_with_tabs() {
+        let once = apply("•\ta\n\t•\tb\n1.\tc");
+        assert_eq!(apply(&once), once);
     }
 
     #[test]

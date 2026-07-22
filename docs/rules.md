@@ -10,7 +10,7 @@ Code (fenced, indented, and inline) is left untouched by every rule.
 | 2 | `typography` | Straight quotes/apostrophes → curly; `...` → `…`. |
 | 3 | `whitespace` | Collapse runs of spaces, drop spaces before punctuation, empty whitespace-only lines, keep two-space hard breaks. |
 | 4 | `headings` | One space after the `#`s, no leading indent, trailing punctuation trimmed. Casing untouched. |
-| 5 | `list-markers` | Bullets → `-`, one space after a marker, drop empty items, collapse duplicated markers. Ordered numbers untouched (no renumbering). |
+| 5 | `list-markers` | Bullets → `-`; a marker followed by a tab or spaces (e.g. pasted `•\t`) gets exactly one space; drop empty items; collapse duplicated markers. Ordered numbers untouched (no renumbering). |
 | 6 | `footnotes` | Renumber by first-reference order; move definitions to the bottom. |
 | 7 | `tags` | Tag-led lines moved under the note's opening heading, or to the bottom when it doesn't open with a heading (so tags never become the title/preview): bare tags merged, deduped, and sorted onto one line; a tag with trailing text (e.g. a meeting date) kept on its own line; multi-tag lines split per tag; redundant closing `#` stripped. Tags mid-prose stay put. |
 | 8 | `title-case` | The note's title (a first-line heading) is title-cased: small words lowercased in the middle, first and last always capitalized, words with an interior capital (URL, iPhone) left alone, nothing else lowercased. Other headings keep their casing. |
