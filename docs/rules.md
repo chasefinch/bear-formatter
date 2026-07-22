@@ -7,7 +7,7 @@ Code (fenced, indented, and inline) is left untouched by every rule.
 | # | Rule | What it does |
 |---|------|--------------|
 | 1 | `line-endings` | CRLF / lone CR → LF. |
-| 2 | `typography` | Straight quotes/apostrophes → curly; `...` → `…`. |
+| 2 | `typography` | Straight quotes/apostrophes → curly; `...` → `…`; spaced `. . .` (three or more dots) → `…`. |
 | 3 | `whitespace` | Collapse runs of spaces, drop spaces before punctuation, empty whitespace-only lines, keep two-space hard breaks. |
 | 4 | `headings` | One space after the `#`s, no leading indent, trailing punctuation trimmed. Casing untouched. |
 | 5 | `list-markers` | Bullets → `-`; a marker followed by a tab or spaces (e.g. pasted `•\t`) gets exactly one space; a bare `.` followed by a tab is a pasted marker too (a numbered item that lost its number — `. prose` is left alone); drop empty items; collapse duplicated markers. Ordered numbers untouched (no renumbering). |

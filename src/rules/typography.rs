@@ -1,4 +1,5 @@
-//! **typography** — curly quotes and apostrophes, and a proper ellipsis.
+//! **typography** — curly quotes and apostrophes, and a proper ellipsis:
+//! `...` and spaced `. . .` (three or more dots) both become `…`.
 //! Code (fenced and inline) is left untouched.
 
 use crate::engine::ignore::IgnoreRanges;
@@ -28,6 +29,12 @@ impl Rule for Typography {
                 cursor += 3;
                 continue;
             }
+            if let Some(length) = spaced_ellipsis(&text[cursor..]) {
+                out.push('…');
+                previous = Some('…');
+                cursor += length;
+                continue;
+            }
             let emitted = match current {
                 '"' if opens(previous) => '“',
                 '"' => '”',
@@ -40,6 +47,36 @@ impl Rule for Typography {
         }
         out
     }
+}
+
+/// If `rest` opens with a spaced ellipsis — three or more dots separated only
+/// by spaces or tabs, like `. . .` — the byte length of the whole run. Dots
+/// with anything else between them (initials like `J. R. R.`) never match.
+fn spaced_ellipsis(rest: &str) -> Option<usize> {
+    let bytes = rest.as_bytes();
+    if bytes.first() != Some(&b'.') {
+        return None;
+    }
+    let mut dots = 1;
+    let mut end = 1;
+    let mut cursor = 1;
+    loop {
+        let mut probe = cursor;
+        while bytes
+            .get(probe)
+            .is_some_and(|&byte| byte == b' ' || byte == b'\t')
+        {
+            probe += 1;
+        }
+        if probe > cursor && bytes.get(probe) == Some(&b'.') {
+            dots += 1;
+            end = probe + 1;
+            cursor = probe + 1;
+        } else {
+            break;
+        }
+    }
+    (dots >= 3).then_some(end)
 }
 
 /// Whether a quote here should be an opening one: at the start, or after
@@ -78,6 +115,21 @@ mod tests {
     #[test]
     fn makes_ellipsis() {
         assert_eq!(apply("wait..."), "wait…");
+    }
+
+    #[test]
+    fn collapses_spaced_ellipses() {
+        assert_eq!(apply(". . ."), "…");
+        assert_eq!(apply("so. . . yes"), "so… yes");
+        // Wider spacing and a fourth dot are still one ellipsis.
+        assert_eq!(apply(".  .  ."), "…");
+        assert_eq!(apply(". . . ."), "…");
+    }
+
+    #[test]
+    fn leaves_dot_pairs_and_initials_alone() {
+        assert_eq!(apply(". ."), ". .");
+        assert_eq!(apply("J. R. R. Tolkien"), "J. R. R. Tolkien");
     }
 
     #[test]
