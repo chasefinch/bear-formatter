@@ -1,8 +1,8 @@
 class BearFormatter < Formula
   desc "Formatter for Bear notes"
   homepage "https://github.com/chasefinch/bear-formatter"
-  url "https://github.com/chasefinch/bear-formatter/archive/refs/tags/v1.0.5.tar.gz"
-  sha256 "dbeb8532aa4f6d3319943228a4203991a6e3fc5285d53bef1fd4e168757886ed"
+  url "https://github.com/chasefinch/bear-formatter/archive/refs/tags/v1.0.6.tar.gz"
+  sha256 "f5d46494b10b48c1e1b3e80b5437bd64e3dfbcd09d99588bc7a14897eba88fe1"
   license "MIT"
   head "https://github.com/chasefinch/bear-formatter.git", branch: "main"
 
