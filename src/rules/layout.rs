@@ -10,7 +10,8 @@
 //! - none between a heading and a tag line that follows it (one after);
 //! - inside a list, a blank between an item and its continuation paragraph is
 //!   kept, and a multi-paragraph item is followed by a blank before the next
-//!   item.
+//!   item; a blank before a nested sub-list is dropped (a sub-list is part of
+//!   its item, not a new paragraph).
 //!
 //! Known v1 gaps (to revisit): continuation-line indentation is left as-is
 //! rather than retabbed, and blank lines are emitted empty (not indented to the
@@ -265,18 +266,16 @@ fn place_item(content: &str, levels: &mut Vec<Level>, had_blank: bool) -> (Strin
         Some(level) => width > level.width,
     };
     let blank_before = if going_deeper {
-        // Nested content: a blank before it makes the parent item loose.
-        if had_blank {
-            if let Some(parent) = levels.last_mut() {
-                parent.loose = true;
-            }
-        }
+        // A nested sub-list is part of its parent item, not a new paragraph —
+        // a blank before it is dropped. (A blank before continuation *prose*
+        // is a real paragraph break and is kept, in `place_cont`.)
+        let nested = !levels.is_empty();
         levels.push(Level {
             width,
             loose: false,
             kind,
         });
-        had_blank
+        had_blank && !nested
     } else {
         match levels.last_mut() {
             Some(level) => {
@@ -423,10 +422,21 @@ mod tests {
     fn loose_list_item_gets_a_trailing_blank() {
         // A multi-paragraph item (nested content separated by a blank) is
         // followed by a blank before the next sibling — like the blank before it.
+        // The blank before the nested sub-list, though, is dropped: a sub-list
+        // is not a paragraph.
         let input = "- a\n- b\n\n\tnote\n\n\t- x\n\t- y\n- c";
-        assert_eq!(apply(input), "- a\n- b\n\n\tnote\n\n\t- x\n\t- y\n\n- c");
+        assert_eq!(apply(input), "- a\n- b\n\n\tnote\n\t- x\n\t- y\n\n- c");
         let once = apply(input);
         assert_eq!(apply(&once), once);
+    }
+
+    #[test]
+    fn no_blank_between_an_item_and_its_sub_list() {
+        assert_eq!(
+            apply("3. Habit\n\n\t- Kid Time\n\t- Phone Use"),
+            "3. Habit\n\t- Kid Time\n\t- Phone Use"
+        );
+        assert_eq!(apply("- a\n\n\t- x\n- b"), "- a\n\t- x\n- b");
     }
 
     #[test]
