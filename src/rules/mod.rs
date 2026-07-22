@@ -12,6 +12,7 @@ mod layout;
 mod line_endings;
 mod list_markers;
 mod support;
+mod tables;
 mod tags;
 mod title_case;
 mod typography;
@@ -24,6 +25,7 @@ pub use headings::Headings;
 pub use layout::Layout;
 pub use line_endings::LineEndings;
 pub use list_markers::ListMarkers;
+pub use tables::Tables;
 pub use tags::Tags;
 pub use title_case::TitleCase;
 pub use typography::Typography;
@@ -43,6 +45,7 @@ pub fn all() -> Vec<Box<dyn Rule>> {
         Box::new(Tags),
         Box::new(TitleCase),
         Box::new(HeadingLevels),
+        Box::new(Tables),
         Box::new(Layout),
         Box::new(FinalNewline),
     ]

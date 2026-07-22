@@ -51,6 +51,11 @@ fn starts_list_marker(rest: &str) -> bool {
             let after = &rest[first.len_utf8()..];
             return after.is_empty() || after.starts_with([' ', '\t']);
         }
+        // A bare `.` counts only with a tab after it (a pasted numbered item
+        // that lost its number); `. prose` stays prose.
+        if first == '.' && rest[1..].starts_with('\t') {
+            return true;
+        }
     }
     let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
     if digits > 0 {

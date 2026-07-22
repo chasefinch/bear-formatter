@@ -76,6 +76,12 @@ fn split_marker(rest: &str) -> Option<(&str, &str)> {
             ));
         }
     }
+    // A bare `.` followed by a tab is a pasted marker (a numbered item that
+    // lost its number). A space is not enough — ". . ." and shell `. script`
+    // lines are prose.
+    if first == '.' && rest[1..].starts_with('\t') {
+        return Some((&rest[..1], rest[1..].trim_start_matches([' ', '\t'])));
+    }
     None
 }
 
@@ -124,6 +130,14 @@ mod tests {
     #[test]
     fn accepts_a_tab_after_a_nested_marker() {
         assert_eq!(apply("\t•\tBar"), "\t- Bar");
+    }
+
+    #[test]
+    fn a_bare_period_with_a_tab_is_a_pasted_marker() {
+        assert_eq!(apply(".\t**Roasted Carrots**"), "- **Roasted Carrots**");
+        // With a space (or nothing) after it, a period is prose.
+        assert_eq!(apply(". . ."), ". . .");
+        assert_eq!(apply("."), ".");
     }
 
     #[test]

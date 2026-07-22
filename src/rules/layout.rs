@@ -80,7 +80,7 @@ impl Rule for Layout {
                 let (count, separator) = if previous_is_list && current_is_list {
                     (usize::from(list_blank), "")
                 } else {
-                    gap(prev, group, hard_break, &rendered)
+                    gap(prev, group, hard_break, &rendered, had_blank)
                 };
                 for _ in 0..count {
                     lines.push(separator.to_string());
@@ -150,6 +150,7 @@ fn gap(
     current: Group,
     prev_hard_break: bool,
     current_line: &str,
+    had_blank: bool,
 ) -> (usize, &'static str) {
     if let (Group::Quote, Group::Quote) = (previous, current) {
         // Inside a blockquote a newline is a paragraph break too (split with an
@@ -159,7 +160,10 @@ fn gap(
         let keep_together = prev_hard_break || inner.starts_with('|');
         return (usize::from(!keep_together), ">");
     }
-    (desired_blanks(previous, current, prev_hard_break), "")
+    (
+        desired_blanks(previous, current, prev_hard_break, had_blank),
+        "",
+    )
 }
 
 /// The content of a blockquote line after its `>` marker.
@@ -202,16 +206,21 @@ fn is_label_line(trimmed: &str) -> bool {
 /// never hand-break inside a paragraph), so consecutive prose lines are split
 /// with a blank line — unless the previous line ends with an explicit two-space
 /// hard break.
-fn desired_blanks(previous: Group, current: Group, prev_hard_break: bool) -> usize {
+fn desired_blanks(
+    previous: Group,
+    current: Group,
+    prev_hard_break: bool,
+    had_blank: bool,
+) -> usize {
     match (previous, current) {
         (Group::Heading, Group::Tag) | (Group::Tag, Group::Tag) => 0,
         (Group::Code, Group::Code) => 0,
         // Consecutive wikilink-only lines read as a table of contents.
         (Group::Wikilink, Group::Wikilink) => 0,
-        // Pipe-prefixed lines (table rows) are one contiguous block — a "don't
-        // split these" marker. Blanks between them are removed; the blank after
-        // the block is enforced by the default arm below.
-        (Group::Table, Group::Table) => 0,
+        // Contiguous pipe lines are one block (never split by a paragraph
+        // break), but a blank in the source separates two distinct tables and
+        // is kept — deliberate merging is the tables rule's job.
+        (Group::Table, Group::Table) => usize::from(had_blank),
         (Group::Para, Group::Para) => usize::from(!prev_hard_break),
         _ => 1,
     }
@@ -390,8 +399,9 @@ mod tests {
             apply("| John Smith\n| 123 Main St\n| Springfield"),
             "| John Smith\n| 123 Main St\n| Springfield"
         );
-        // Blank between pipe lines removed; blank after the block enforced.
-        assert_eq!(apply("| a\n\n| b\ntext"), "| a\n| b\n\ntext");
+        // A blank between pipe blocks separates them (two tables stay two
+        // tables); the blank after the block is still enforced.
+        assert_eq!(apply("| a\n\n| b\ntext"), "| a\n\n| b\n\ntext");
     }
 
     #[test]
