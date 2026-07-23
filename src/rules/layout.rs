@@ -11,7 +11,9 @@
 //! - inside a list, a blank between an item and its continuation paragraph is
 //!   kept, and a multi-paragraph item is followed by a blank before the next
 //!   item; a blank before a nested sub-list is dropped (a sub-list is part of
-//!   its item, not a new paragraph).
+//!   its item, not a new paragraph) — unless a continuation paragraph already
+//!   separates the marker from the sub-list, in which case a blank is emitted
+//!   before the sub-list too, symmetric with the item's trailing blank.
 //!
 //! Known v1 gaps (to revisit): continuation-line indentation is left as-is
 //! rather than retabbed, and blank lines are emitted empty (not indented to the
@@ -254,7 +256,8 @@ struct Level {
 /// Place a list-item line: adjust the level stack and return the retabbed line
 /// plus whether a blank should precede it. A blank precedes a sibling when the
 /// previous item here was loose (multi-paragraph) or when the list kind changes
-/// (a numbered list next to bullets/todos). Nesting adds none.
+/// (a numbered list next to bullets/todos). Nesting adds none, unless the parent
+/// item has gone loose (a continuation paragraph precedes the sub-list).
 fn place_item(content: &str, levels: &mut Vec<Level>, had_blank: bool) -> (String, bool) {
     let width = list_item_indent(content).unwrap_or(0);
     let kind = list_kind(content);
@@ -268,14 +271,26 @@ fn place_item(content: &str, levels: &mut Vec<Level>, had_blank: bool) -> (Strin
     let blank_before = if going_deeper {
         // A nested sub-list is part of its parent item, not a new paragraph —
         // a blank before it is dropped. (A blank before continuation *prose*
-        // is a real paragraph break and is kept, in `place_cont`.)
+        // is a real paragraph break and is kept, in `place_cont`.) The exception
+        // is a parent that has already gone loose: a continuation paragraph
+        // sits between the marker and this sub-list, so the sub-list follows a
+        // real paragraph and the blank is kept — symmetric with the trailing one.
+        let parent_loose = levels.last().is_some_and(|level| level.loose);
         let nested = !levels.is_empty();
         levels.push(Level {
             width,
             loose: false,
             kind,
         });
-        had_blank && !nested
+        // A nested sub-list hugs its marker (no blank) unless the parent has gone
+        // loose, in which case the blank is emitted structurally — like the
+        // trailing one — whether or not the source had it. A root list opening
+        // here has its spacing decided by `gap` instead, so `had_blank` is moot.
+        if nested {
+            parent_loose
+        } else {
+            had_blank
+        }
     } else {
         match levels.last_mut() {
             Some(level) => {
@@ -422,10 +437,24 @@ mod tests {
     fn loose_list_item_gets_a_trailing_blank() {
         // A multi-paragraph item (nested content separated by a blank) is
         // followed by a blank before the next sibling — like the blank before it.
-        // The blank before the nested sub-list, though, is dropped: a sub-list
-        // is not a paragraph.
+        // Because a continuation paragraph precedes the sub-list here, the blank
+        // before the sub-list is kept too (it follows a real paragraph).
         let input = "- a\n- b\n\n\tnote\n\n\t- x\n\t- y\n- c";
-        assert_eq!(apply(input), "- a\n- b\n\n\tnote\n\t- x\n\t- y\n\n- c");
+        assert_eq!(apply(input), "- a\n- b\n\n\tnote\n\n\t- x\n\t- y\n\n- c");
+        let once = apply(input);
+        assert_eq!(apply(&once), once);
+    }
+
+    #[test]
+    fn continuation_paragraph_keeps_blank_before_sub_list() {
+        // Marker → paragraph → sub-list: the sub-list follows a real paragraph,
+        // so blanks land on both sides of it (unlike a sub-list glued straight
+        // to the marker, below).
+        let input = "- item\n\n\t*lead-in:*\n\t- one\n\t- two\n- next";
+        assert_eq!(
+            apply(input),
+            "- item\n\n\t*lead-in:*\n\n\t- one\n\t- two\n\n- next"
+        );
         let once = apply(input);
         assert_eq!(apply(&once), once);
     }
